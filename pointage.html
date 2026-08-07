@@ -152,8 +152,13 @@
         return;
       }
 
+      const btnClique = action === "depart" ? btnDepart : btnArrivee;
+      const libelleOriginal = btnClique.textContent;
       btnArrivee.disabled = true;
       btnDepart.disabled = true;
+      btnClique.textContent = "⏳ Envoi en cours...";
+      msg.className = "";
+      msg.textContent = "Envoi en cours, merci de patienter...";
 
       const data = {
         action: action,
@@ -179,11 +184,13 @@
             msg.className = "err";
             msg.textContent = res.message || "Erreur lors de l'envoi.";
           }
+          btnClique.textContent = libelleOriginal;
           majEtatBoutons();
         })
         .catch(function(err) {
           msg.className = "err";
           msg.textContent = "Erreur réseau lors de l'envoi. Réessayez.";
+          btnClique.textContent = libelleOriginal;
           majEtatBoutons();
         });
     }
