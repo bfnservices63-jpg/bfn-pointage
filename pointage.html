@@ -25,17 +25,21 @@
     margin-top: 6px; font-family: inherit;
   }
   textarea { min-height: 70px; }
-  button { background: #111; color: white; border: none; margin-top: 22px; font-weight: bold; }
+  .boutons { display: flex; gap: 10px; margin-top: 22px; }
+  button { color: white; border: none; font-weight: bold; margin-top: 0; }
+  #btnArrivee { background: #0a7a20; }
+  #btnDepart { background: #b00020; }
   button:disabled { background: #aaa; }
   .ok { color: #0a7a20; font-weight: bold; margin-top: 15px; }
   .err { color: #b00020; font-weight: bold; margin-top: 15px; }
   .small { color: #777; font-size: 13px; margin-top: 14px; }
+  .encart { background: #f0f4f8; border-radius: 9px; padding: 12px; margin-top: 18px; }
 </style>
 </head>
 <body>
   <div class="box">
     <h1>BFN Nouvelle Aquitaine</h1>
-    <div class="subtitle">Pointage journalier</div>
+    <div class="subtitle">Pointage arrivée / départ</div>
 
     <label>Site</label>
     <select id="site" required onchange="majAffichageChambres()">
@@ -47,35 +51,30 @@
       <option value="">Chargement...</option>
     </select>
 
-    <label>Date</label>
-    <input id="date" type="date" required>
+    <div class="encart">
+      <div class="small" style="margin-top:0;">En arrivant sur le site, cliquez "J'ARRIVE". En repartant, remplissez les champs ci-dessous puis cliquez "JE PARS".</div>
 
-    <label>Heure d'arrivée</label>
-    <input id="arrivee" type="time" required>
+      <div id="blocChambres">
+        <label>Nombre de chambres (à remplir en partant)</label>
+        <input id="chambres" type="number" min="0" step="1">
+      </div>
 
-    <label>Heure de départ</label>
-    <input id="depart" type="time" required>
-
-    <div id="blocChambres">
-      <label>Nombre de chambres</label>
-      <input id="chambres" type="number" min="0" step="1">
+      <label>Observation facultative (à remplir en partant)</label>
+      <textarea id="observation" placeholder="Ex : manque de linge, problème chambre, retard..."></textarea>
     </div>
 
-    <label>Observation facultative</label>
-    <textarea id="observation" placeholder="Ex : manque de linge, problème chambre, retard..."></textarea>
-
-    <button id="btn" onclick="envoyer()" disabled>Chargement...</button>
+    <div class="boutons">
+      <button id="btnArrivee" onclick="envoyer('arrivee')" disabled>☀️ J'ARRIVE</button>
+      <button id="btnDepart" onclick="envoyer('depart')" disabled>🌙 JE PARS</button>
+    </div>
 
     <div id="message"></div>
-    <div class="small">À remplir chaque jour en fin de service.</div>
+    <div class="small">Les heures sont enregistrées automatiquement au moment du clic.</div>
   </div>
 
   <script>
-    // Collez ici le lien de votre déploiement Apps Script, en remplaçant /exec par /exec
-    // (c'est déjà l'URL /exec obtenue via Déployer > Gérer les déploiements).
+    // Collez ici le lien de votre déploiement Apps Script (Déployer > Gérer les déploiements).
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzuvcPjt49OpNI7xy4Lv_MbSWPB7DvUIOGS8Mztz1Yy8QoorVzZoy4SJQkgbUpH4R3z/exec";
-
-    document.getElementById("date").valueAsDate = new Date();
 
     let sitesData = [];
 
@@ -84,14 +83,11 @@
       const site = sitesData.find(function(s) { return s.nom === select.value; });
       const type = site ? site.type : "";
       const bloc = document.getElementById("blocChambres");
-      const champChambres = document.getElementById("chambres");
       if (type === "Hôtel") {
         bloc.style.display = "";
-        champChambres.required = true;
       } else {
         bloc.style.display = "none";
-        champChambres.required = false;
-        champChambres.value = "";
+        document.getElementById("chambres").value = "";
       }
     }
 
@@ -116,8 +112,8 @@
           sitesData = data.sites || [];
           remplirSelect("site", sitesData.map(function(s) { return { value: s.nom, label: s.nom }; }), "Sélectionner");
           remplirSelect("nom", (data.salaries || []).map(function(n) { return { value: n, label: n }; }), "Sélectionner");
-          document.getElementById("btn").disabled = false;
-          document.getElementById("btn").textContent = "ENVOYER";
+          document.getElementById("btnArrivee").disabled = false;
+          document.getElementById("btnDepart").disabled = false;
           majAffichageChambres();
         })
         .catch(function(err) {
@@ -126,19 +122,27 @@
         });
     }
 
-    function envoyer() {
-      const btn = document.getElementById("btn");
+    function envoyer(action) {
+      const btnArrivee = document.getElementById("btnArrivee");
+      const btnDepart = document.getElementById("btnDepart");
       const msg = document.getElementById("message");
       msg.innerHTML = "";
-      btn.disabled = true;
-      btn.textContent = "Envoi...";
+
+      const site = document.getElementById("site").value;
+      const nom = document.getElementById("nom").value;
+      if (!site || !nom) {
+        msg.className = "err";
+        msg.textContent = "Merci de sélectionner votre site et votre nom.";
+        return;
+      }
+
+      btnArrivee.disabled = true;
+      btnDepart.disabled = true;
 
       const data = {
-        site: document.getElementById("site").value,
-        nom: document.getElementById("nom").value,
-        date: document.getElementById("date").value,
-        arrivee: document.getElementById("arrivee").value,
-        depart: document.getElementById("depart").value,
+        action: action,
+        site: site,
+        nom: nom,
         chambres: document.getElementById("chambres").value,
         observation: document.getElementById("observation").value
       };
@@ -153,24 +157,20 @@
           if (res.ok) {
             msg.className = "ok";
             msg.textContent = res.message;
-            document.getElementById("site").value = "";
-            document.getElementById("arrivee").value = "";
-            document.getElementById("depart").value = "";
             document.getElementById("chambres").value = "";
             document.getElementById("observation").value = "";
-            majAffichageChambres();
           } else {
             msg.className = "err";
             msg.textContent = res.message || "Erreur lors de l'envoi.";
           }
-          btn.disabled = false;
-          btn.textContent = "ENVOYER";
+          btnArrivee.disabled = false;
+          btnDepart.disabled = false;
         })
         .catch(function(err) {
           msg.className = "err";
           msg.textContent = "Erreur réseau lors de l'envoi. Réessayez.";
-          btn.disabled = false;
-          btn.textContent = "ENVOYER";
+          btnArrivee.disabled = false;
+          btnDepart.disabled = false;
         });
     }
 
