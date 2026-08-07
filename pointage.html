@@ -42,12 +42,12 @@
     <div class="subtitle">Pointage arrivée / départ</div>
 
     <label>Site</label>
-    <select id="site" required onchange="majAffichageChambres()">
+    <select id="site" required onchange="majEtatBoutons()">
       <option value="">Chargement...</option>
     </select>
 
     <label>Nom</label>
-    <select id="nom" required>
+    <select id="nom" required onchange="majEtatBoutons()">
       <option value="">Chargement...</option>
     </select>
 
@@ -55,8 +55,8 @@
       <div class="small" style="margin-top:0;">En arrivant sur le site, cliquez "J'ARRIVE". En repartant, remplissez les champs ci-dessous puis cliquez "JE PARS".</div>
 
       <div id="blocChambres">
-        <label>Nombre de chambres (à remplir en partant)</label>
-        <input id="chambres" type="number" min="0" step="1">
+        <label>Nombre de chambres (obligatoire pour partir)</label>
+        <input id="chambres" type="number" min="0" step="1" oninput="majEtatBoutons()">
       </div>
 
       <label>Observation facultative (à remplir en partant)</label>
@@ -77,18 +77,35 @@
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzuvcPjt49OpNI7xy4Lv_MbSWPB7DvUIOGS8Mztz1Yy8QoorVzZoy4SJQkgbUpH4R3z/exec";
 
     let sitesData = [];
+    let donneesChargees = false;
 
-    function majAffichageChambres() {
+    function siteEstHotel_() {
       const select = document.getElementById("site");
       const site = sitesData.find(function(s) { return s.nom === select.value; });
-      const type = site ? site.type : "";
+      return site ? site.type === "Hôtel" : false;
+    }
+
+    function majAffichageChambres() {
       const bloc = document.getElementById("blocChambres");
-      if (type === "Hôtel") {
+      if (siteEstHotel_()) {
         bloc.style.display = "";
       } else {
         bloc.style.display = "none";
         document.getElementById("chambres").value = "";
       }
+    }
+
+    function majEtatBoutons() {
+      majAffichageChambres();
+      const site = document.getElementById("site").value;
+      const nom = document.getElementById("nom").value;
+      const chambres = document.getElementById("chambres").value;
+      const identifieOk = donneesChargees && !!(site && nom);
+
+      document.getElementById("btnArrivee").disabled = !identifieOk;
+      // Le départ reste indisponible tant que le nombre de chambres n'est pas rempli (sites hôtel).
+      const chambresOk = !siteEstHotel_() || (chambres !== "" && Number(chambres) >= 0);
+      document.getElementById("btnDepart").disabled = !identifieOk || !chambresOk;
     }
 
     function remplirSelect(id, options, texteVide) {
@@ -112,9 +129,8 @@
           sitesData = data.sites || [];
           remplirSelect("site", sitesData.map(function(s) { return { value: s.nom, label: s.nom }; }), "Sélectionner");
           remplirSelect("nom", (data.salaries || []).map(function(n) { return { value: n, label: n }; }), "Sélectionner");
-          document.getElementById("btnArrivee").disabled = false;
-          document.getElementById("btnDepart").disabled = false;
-          majAffichageChambres();
+          donneesChargees = true;
+          majEtatBoutons();
         })
         .catch(function(err) {
           msg.className = "err";
@@ -163,14 +179,12 @@
             msg.className = "err";
             msg.textContent = res.message || "Erreur lors de l'envoi.";
           }
-          btnArrivee.disabled = false;
-          btnDepart.disabled = false;
+          majEtatBoutons();
         })
         .catch(function(err) {
           msg.className = "err";
           msg.textContent = "Erreur réseau lors de l'envoi. Réessayez.";
-          btnArrivee.disabled = false;
-          btnDepart.disabled = false;
+          majEtatBoutons();
         });
     }
 
