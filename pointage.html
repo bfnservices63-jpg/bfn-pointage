@@ -29,7 +29,18 @@
   button { color: white; border: none; font-weight: bold; margin-top: 0; }
   #btnArrivee { background: #0a7a20; }
   #btnDepart { background: #b00020; }
-  button:disabled { background: #aaa; }
+  /* Les sélecteurs d'identifiant ci-dessus l'emportent sur "button:disabled" : sans ces
+     règles plus précises, un bouton désactivé resterait vert ou rouge, donc l'air cliquable.
+     Le salarié clique, rien ne se passe, et rien ne lui dit pourquoi. */
+  button:disabled,
+  #btnArrivee:disabled,
+  #btnDepart:disabled { background: #aaa; color: #f0f0f0; cursor: not-allowed; }
+  /* Rappel de ce qui bloque encore le départ, juste sous les boutons. */
+  #blocage {
+    display: none; background: #fff3e0; border-left: 5px solid #f9a825;
+    border-radius: 7px; padding: 11px; margin-top: 12px;
+    color: #6d4c00; font-weight: bold; font-size: 15px; line-height: 1.4;
+  }
   /* Bloc passe chambres : jaune vif, impossible à manquer. La consigne est écrite en toutes
      lettres pour qu'aucun salarié n'ait à deviner ce qu'on attend de lui. */
   #blocPasse {
@@ -89,6 +100,7 @@
       <button id="btnDepart" onclick="envoyer('depart')" disabled>🌙 JE PARS</button>
     </div>
 
+    <div id="blocage"></div>
     <div id="message"></div>
     <div class="small">Les heures sont enregistrées automatiquement au moment du clic.</div>
   </div>
@@ -183,6 +195,20 @@
       const chambresOk = !estHotel || (chambres !== "" && Number(chambres) >= 0);
       const passeOk = !estHotel || passeRendu;
       document.getElementById("btnDepart").disabled = !identifieOk || !chambresOk || !passeOk;
+
+      // Un bouton gris dit qu'on ne peut pas partir, pas POURQUOI. On l'écrit noir sur blanc.
+      const manque = [];
+      if (!identifieOk) manque.push("choisissez votre site et votre nom");
+      if (identifieOk && !chambresOk) manque.push("indiquez le nombre de chambres");
+      if (identifieOk && !passeOk) manque.push("cliquez sur le bouton jaune du passe chambres");
+
+      const blocage = document.getElementById("blocage");
+      if (manque.length > 0) {
+        blocage.style.display = "";
+        blocage.innerHTML = "🔒 Pour pouvoir pointer votre départ :<br>• " + manque.join("<br>• ");
+      } else {
+        blocage.style.display = "none";
+      }
     }
 
     function remplirSelect(id, options, texteVide) {
