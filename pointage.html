@@ -115,6 +115,10 @@
     // sur un site hôtel. Remise à zéro dès qu'on change de site ou de nom, pour qu'une
     // confirmation ne puisse jamais servir à une autre vacation que celle en cours.
     let passeRendu = false;
+    // État de l'arrivée, demandé au serveur. Le formulaire est consulté sur plusieurs
+    // appareils et rouvert plusieurs fois par jour : il ne peut pas se fier à sa propre
+    // mémoire pour savoir si le salarié est déjà arrivé, seul le Sheet fait foi.
+    let etatArrivee = { verifie: false, ouverte: false, heure: "", enCours: false };
 
     function siteEstHotel_() {
       const select = document.getElementById("site");
@@ -127,7 +131,9 @@
       const blocPasse = document.getElementById("blocPasse");
       if (siteEstHotel_()) {
         bloc.style.display = "";
-        blocPasse.style.display = "";
+        // Le bloc passe n'apparaît QU'APRÈS le pointage d'arrivée. Sinon le salarié
+        // confirmerait la restitution du passe au moment même où on le lui remet.
+        blocPasse.style.display = etatArrivee.ouverte ? "" : "none";
       } else {
         // Site tertiaire : ni chambres, ni passe. Les deux blocs disparaissent.
         bloc.style.display = "none";
@@ -155,7 +161,36 @@
 
     function changementIdentite() {
       reinitialiserPasse();
+      etatArrivee = { verifie: false, ouverte: false, heure: "", enCours: false };
       majEtatBoutons();
+      verifierArrivee();
+    }
+
+    /**
+     * Demande au serveur si ce salarié a une arrivée en cours aujourd'hui sur ce site.
+     * En cas d'échec réseau, on n'immobilise pas le salarié : on laisse le parcours ouvert,
+     * le serveur restant de toute façon le juge final au moment de l'envoi.
+     */
+    function verifierArrivee() {
+      const site = document.getElementById("site").value;
+      const nom = document.getElementById("nom").value;
+      if (!site || !nom) return;
+
+      etatArrivee.enCours = true;
+      majEtatBoutons();
+
+      fetch(SCRIPT_URL + "?format=json&etat=1&nom=" + encodeURIComponent(nom) +
+            "&site=" + encodeURIComponent(site))
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+          etatArrivee = { verifie: true, ouverte: !!res.arriveeOuverte,
+            heure: res.heureArrivee || "", enCours: false };
+          majEtatBoutons();
+        })
+        .catch(function() {
+          etatArrivee = { verifie: false, ouverte: true, heure: "", enCours: false };
+          majEtatBoutons();
+        });
     }
 
     /**
@@ -188,19 +223,27 @@
       const chambres = document.getElementById("chambres").value;
       const identifieOk = donneesChargees && !!(site && nom);
 
-      document.getElementById("btnArrivee").disabled = !identifieOk;
+      // J'ARRIVE est fermé pendant la vérification, et une fois l'arrivée déjà pointée :
+      // le salarié voit ainsi tout de suite où il en est, au lieu d'être refusé après coup.
+      document.getElementById("btnArrivee").disabled =
+        !identifieOk || etatArrivee.enCours || etatArrivee.ouverte;
       // Sur un site hôtel, le départ exige DEUX conditions : le nombre de chambres saisi,
       // et le passe chambres confirmé rendu. Sur un site tertiaire, ni l'un ni l'autre.
       const estHotel = siteEstHotel_();
       const chambresOk = !estHotel || (chambres !== "" && Number(chambres) >= 0);
       const passeOk = !estHotel || passeRendu;
-      document.getElementById("btnDepart").disabled = !identifieOk || !chambresOk || !passeOk;
+      document.getElementById("btnDepart").disabled =
+        !identifieOk || etatArrivee.enCours || !etatArrivee.ouverte || !chambresOk || !passeOk;
 
       // Un bouton gris dit qu'on ne peut pas partir, pas POURQUOI. On l'écrit noir sur blanc.
       const manque = [];
       if (!identifieOk) manque.push("choisissez votre site et votre nom");
-      if (identifieOk && !chambresOk) manque.push("indiquez le nombre de chambres");
-      if (identifieOk && !passeOk) manque.push("cliquez sur le bouton jaune du passe chambres");
+      else if (etatArrivee.enCours) manque.push("vérification en cours, patientez...");
+      else if (!etatArrivee.ouverte) manque.push("pointez d'abord votre arrivée avec le bouton vert");
+      else {
+        if (!chambresOk) manque.push("indiquez le nombre de chambres");
+        if (!passeOk) manque.push("cliquez sur le bouton jaune du passe chambres");
+      }
 
       const blocage = document.getElementById("blocage");
       if (manque.length > 0) {
@@ -208,6 +251,11 @@
         blocage.innerHTML = "🔒 Pour pouvoir pointer votre départ :<br>• " + manque.join("<br>• ");
       } else {
         blocage.style.display = "none";
+        if (etatArrivee.heure) {
+          blocage.style.display = "";
+          blocage.innerHTML = "✅ Arrivée pointée à " + etatArrivee.heure +
+            ". Vous pouvez pointer votre départ.";
+        }
       }
     }
 
@@ -286,7 +334,14 @@
             document.getElementById("chambres").value = "";
             document.getElementById("observation").value = "";
             // Le passe repart à zéro : la prochaine vacation exigera une nouvelle confirmation.
-            if (action === "depart") reinitialiserPasse();
+            // L'état suit l'action : une arrivée ouvre la vacation, un départ la referme.
+            if (action === "arrivee") {
+              etatArrivee = { verifie: true, ouverte: true, heure: "", enCours: false };
+              verifierArrivee();
+            } else {
+              etatArrivee = { verifie: true, ouverte: false, heure: "", enCours: false };
+              reinitialiserPasse();
+            }
           } else {
             msg.className = "err";
             msg.textContent = res.message || "Erreur lors de l'envoi.";
