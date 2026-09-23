@@ -36,6 +36,12 @@
   #btnArrivee:disabled,
   #btnDepart:disabled { background: #aaa; color: #f0f0f0; cursor: not-allowed; }
   /* Rappel de ce qui bloque encore le départ, juste sous les boutons. */
+  /* Bandeau de position : discret tant que tout va bien, rouge si le salarié a refusé. */
+  #blocGeo {
+    margin-top: 12px; padding: 10px; border-radius: 7px; font-size: 14px;
+    background: #e8f0fe; color: #1a3d7c; border-left: 5px solid #1a73e8;
+  }
+  #blocGeo.refus { background: #ffebee; color: #b00020; border-left-color: #b00020; font-weight: bold; }
   #blocage {
     display: none; background: #fff3e0; border-left: 5px solid #f9a825;
     border-radius: 7px; padding: 11px; margin-top: 12px;
@@ -100,6 +106,7 @@
       <button id="btnDepart" onclick="envoyer('depart')" disabled>🌙 JE PARS</button>
     </div>
 
+    <div id="blocGeo">📍 Localisation en cours...</div>
     <div id="blocage"></div>
     <div id="message"></div>
     <div class="small">Les heures sont enregistrées automatiquement au moment du clic.</div>
@@ -119,6 +126,56 @@
     // appareils et rouvert plusieurs fois par jour : il ne peut pas se fier à sa propre
     // mémoire pour savoir si le salarié est déjà arrivé, seul le Sheet fait foi.
     let etatArrivee = { verifie: false, ouverte: false, heure: "", enCours: false };
+    // Position du salarié. Demandée UNIQUEMENT à l'ouverture de la page et au moment d'un
+    // pointage : aucun suivi en arrière-plan, aucune trace entre deux pointages.
+    let geo = { etat: "attente", lat: null, lon: null, precision: null };
+
+    /**
+     * Demande la position au navigateur. Le refus et l'échec technique sont deux choses
+     * différentes : refuser est un choix du salarié, échouer peut n'être qu'un sous-sol sans
+     * signal. Le premier bloque le pointage, le second ne le bloque pas — sinon un salarié
+     * perdrait ses heures pour une raison qui ne dépend pas de lui.
+     */
+    function demanderPosition() {
+      const bloc = document.getElementById("blocGeo");
+      if (!navigator.geolocation) {
+        geo = { etat: "indisponible", lat: null, lon: null, precision: null };
+        bloc.className = "";
+        bloc.textContent = "📍 Localisation non disponible sur cet appareil.";
+        majEtatBoutons();
+        return Promise.resolve(geo);
+      }
+
+      bloc.className = "";
+      bloc.textContent = "📍 Localisation en cours...";
+
+      return new Promise(function(resoudre) {
+        navigator.geolocation.getCurrentPosition(
+          function(pos) {
+            geo = { etat: "ok", lat: pos.coords.latitude, lon: pos.coords.longitude,
+                    precision: pos.coords.accuracy };
+            bloc.className = "";
+            bloc.textContent = "📍 Position enregistrée (précision " +
+              Math.round(pos.coords.accuracy) + " m).";
+            majEtatBoutons();
+            resoudre(geo);
+          },
+          function(err) {
+            const refus = (err && err.code === 1);
+            geo = { etat: refus ? "refus" : "indisponible", lat: null, lon: null, precision: null };
+            bloc.className = refus ? "refus" : "";
+            bloc.textContent = refus
+              ? "⛔ Vous avez refusé la localisation. Elle est obligatoire pour pointer : " +
+                "autorisez-la dans votre navigateur, puis rechargez la page."
+              : "📍 Position introuvable pour l'instant (intérieur, sous-sol...). " +
+                "Vous pouvez pointer quand même.";
+            majEtatBoutons();
+            resoudre(geo);
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+      });
+    }
 
     function siteEstHotel_() {
       const select = document.getElementById("site");
@@ -225,18 +282,21 @@
 
       // J'ARRIVE est fermé pendant la vérification, et une fois l'arrivée déjà pointée :
       // le salarié voit ainsi tout de suite où il en est, au lieu d'être refusé après coup.
+      // Un refus de localisation ferme les deux boutons : la règle est la même pour tous.
+      const geoBloque = (geo.etat === "refus");
       document.getElementById("btnArrivee").disabled =
-        !identifieOk || etatArrivee.enCours || etatArrivee.ouverte;
+        !identifieOk || etatArrivee.enCours || etatArrivee.ouverte || geoBloque;
       // Sur un site hôtel, le départ exige DEUX conditions : le nombre de chambres saisi,
       // et le passe chambres confirmé rendu. Sur un site tertiaire, ni l'un ni l'autre.
       const estHotel = siteEstHotel_();
       const chambresOk = !estHotel || (chambres !== "" && Number(chambres) >= 0);
       const passeOk = !estHotel || passeRendu;
       document.getElementById("btnDepart").disabled =
-        !identifieOk || etatArrivee.enCours || !etatArrivee.ouverte || !chambresOk || !passeOk;
+        !identifieOk || etatArrivee.enCours || !etatArrivee.ouverte || !chambresOk || !passeOk || geoBloque;
 
       // Un bouton gris dit qu'on ne peut pas partir, pas POURQUOI. On l'écrit noir sur blanc.
       const manque = [];
+      if (geoBloque) manque.push("autorisez la localisation, puis rechargez la page");
       if (!identifieOk) manque.push("choisissez votre site et votre nom");
       else if (etatArrivee.enCours) manque.push("vérification en cours, patientez...");
       else if (!etatArrivee.ouverte) manque.push("pointez d'abord votre arrivée avec le bouton vert");
@@ -290,7 +350,7 @@
         });
     }
 
-    function envoyer(action) {
+    async function envoyer(action) {
       const btnArrivee = document.getElementById("btnArrivee");
       const btnDepart = document.getElementById("btnDepart");
       const msg = document.getElementById("message");
@@ -310,6 +370,19 @@
       btnDepart.disabled = true;
       btnClique.textContent = "⏳ Envoi en cours...";
       msg.className = "";
+      msg.textContent = "Localisation puis envoi, merci de patienter...";
+
+      // Position reprise à l'instant du clic : c'est le lieu du pointage qu'on veut inscrire,
+      // pas celui de l'ouverture de la page, qui peut dater de plusieurs heures.
+      await demanderPosition();
+      if (geo.etat === "refus") {
+        msg.className = "err";
+        msg.textContent = "Localisation refusée : le pointage ne peut pas être enregistré. " +
+          "Autorisez la localisation dans votre navigateur, puis rechargez la page.";
+        btnClique.textContent = libelleOriginal;
+        majEtatBoutons();
+        return;
+      }
       msg.textContent = "Envoi en cours, merci de patienter...";
 
       const data = {
@@ -318,6 +391,10 @@
         nom: nom,
         chambres: document.getElementById("chambres").value,
         passeRendu: passeRendu ? "Oui" : "Non",
+        geoEtat: geo.etat,
+        geoLat: geo.lat === null ? "" : geo.lat,
+        geoLon: geo.lon === null ? "" : geo.lon,
+        geoPrecision: geo.precision === null ? "" : geo.precision,
         observation: document.getElementById("observation").value
       };
 
@@ -358,6 +435,7 @@
     }
 
     chargerDonnees();
+    demanderPosition();
   </script>
 </body>
 </html>
