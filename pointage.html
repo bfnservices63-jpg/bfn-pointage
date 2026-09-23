@@ -30,6 +30,18 @@
   #btnArrivee { background: #0a7a20; }
   #btnDepart { background: #b00020; }
   button:disabled { background: #aaa; }
+  /* Bloc passe chambres : jaune vif, impossible à manquer. La consigne est écrite en toutes
+     lettres pour qu'aucun salarié n'ait à deviner ce qu'on attend de lui. */
+  #blocPasse {
+    background: #fff8e1; border: 3px solid #f9a825; border-radius: 10px;
+    padding: 14px; margin-top: 16px;
+  }
+  #consignePasse { font-weight: bold; font-size: 16px; color: #6d4c00; line-height: 1.35; }
+  #btnPasse { background: #f9a825; color: #3e2723; font-size: 18px; margin-top: 12px; }
+  #btnPasse:disabled { background: #aaa; color: white; }
+  #blocPasse.valide { background: #e8f5e9; border-color: #0a7a20; }
+  #blocPasse.valide #consignePasse { color: #0a7a20; }
+  #btnPasse.valide { background: #0a7a20; color: white; }
   .ok { color: #0a7a20; font-weight: bold; margin-top: 15px; }
   .err { color: #b00020; font-weight: bold; margin-top: 15px; }
   .small { color: #777; font-size: 13px; margin-top: 14px; }
@@ -42,12 +54,12 @@
     <div class="subtitle">Pointage arrivée / départ</div>
 
     <label>Site</label>
-    <select id="site" required onchange="majEtatBoutons()">
+    <select id="site" required onchange="changementIdentite()">
       <option value="">Chargement...</option>
     </select>
 
     <label>Nom</label>
-    <select id="nom" required onchange="majEtatBoutons()">
+    <select id="nom" required onchange="changementIdentite()">
       <option value="">Chargement...</option>
     </select>
 
@@ -57,6 +69,15 @@
       <div id="blocChambres">
         <label>Nombre de chambres (obligatoire pour partir)</label>
         <input id="chambres" type="number" min="0" step="1" oninput="majEtatBoutons()">
+      </div>
+
+      <div id="blocPasse">
+        <div id="consignePasse">
+          ⚠️ AVANT DE PARTIR :<br>
+          rendez votre passe chambres à la réception,<br>
+          puis cliquez sur le bouton jaune ci-dessous.
+        </div>
+        <button id="btnPasse" onclick="confirmerPasse()">🔑 J'AI BIEN RENDU MON PASSE CHAMBRES</button>
       </div>
 
       <label>Observation facultative (à remplir en partant)</label>
@@ -78,6 +99,10 @@
 
     let sitesData = [];
     let donneesChargees = false;
+    // Restitution du passe chambres : confirmée par le salarié, exigée avant tout départ
+    // sur un site hôtel. Remise à zéro dès qu'on change de site ou de nom, pour qu'une
+    // confirmation ne puisse jamais servir à une autre vacation que celle en cours.
+    let passeRendu = false;
 
     function siteEstHotel_() {
       const select = document.getElementById("site");
@@ -87,12 +112,61 @@
 
     function majAffichageChambres() {
       const bloc = document.getElementById("blocChambres");
+      const blocPasse = document.getElementById("blocPasse");
       if (siteEstHotel_()) {
         bloc.style.display = "";
+        blocPasse.style.display = "";
       } else {
+        // Site tertiaire : ni chambres, ni passe. Les deux blocs disparaissent.
         bloc.style.display = "none";
+        blocPasse.style.display = "none";
         document.getElementById("chambres").value = "";
       }
+    }
+
+    /**
+     * Remet le bouton passe à son état initial. Appelée au chargement, à chaque changement
+     * de site ou de nom, et après un départ enregistré.
+     */
+    function reinitialiserPasse() {
+      passeRendu = false;
+      const btn = document.getElementById("btnPasse");
+      const bloc = document.getElementById("blocPasse");
+      btn.disabled = false;
+      btn.classList.remove("valide");
+      bloc.classList.remove("valide");
+      btn.textContent = "🔑 J'AI BIEN RENDU MON PASSE CHAMBRES";
+      document.getElementById("consignePasse").innerHTML =
+        "⚠️ AVANT DE PARTIR :<br>rendez votre passe chambres à la réception,<br>" +
+        "puis cliquez sur le bouton jaune ci-dessous.";
+    }
+
+    function changementIdentite() {
+      reinitialiserPasse();
+      majEtatBoutons();
+    }
+
+    /**
+     * Confirmation de la restitution du passe. La pause d'une seconde n'est pas décorative :
+     * elle marque visuellement le changement d'état, évite le double-clic réflexe, et laisse
+     * le temps de lire le message d'autorisation qui suit.
+     */
+    function confirmerPasse() {
+      const btn = document.getElementById("btnPasse");
+      if (passeRendu || btn.disabled) return;
+
+      btn.disabled = true;
+      btn.textContent = "⏳ Enregistrement...";
+
+      setTimeout(function() {
+        passeRendu = true;
+        btn.textContent = "✅ PASSE RENDU - C'EST BON";
+        btn.classList.add("valide");
+        document.getElementById("blocPasse").classList.add("valide");
+        document.getElementById("consignePasse").innerHTML =
+          "✅ PASSE CHAMBRES RENDU.<br>Vous pouvez maintenant pointer votre départ.";
+        majEtatBoutons();
+      }, 1000);
     }
 
     function majEtatBoutons() {
@@ -103,9 +177,12 @@
       const identifieOk = donneesChargees && !!(site && nom);
 
       document.getElementById("btnArrivee").disabled = !identifieOk;
-      // Le départ reste indisponible tant que le nombre de chambres n'est pas rempli (sites hôtel).
-      const chambresOk = !siteEstHotel_() || (chambres !== "" && Number(chambres) >= 0);
-      document.getElementById("btnDepart").disabled = !identifieOk || !chambresOk;
+      // Sur un site hôtel, le départ exige DEUX conditions : le nombre de chambres saisi,
+      // et le passe chambres confirmé rendu. Sur un site tertiaire, ni l'un ni l'autre.
+      const estHotel = siteEstHotel_();
+      const chambresOk = !estHotel || (chambres !== "" && Number(chambres) >= 0);
+      const passeOk = !estHotel || passeRendu;
+      document.getElementById("btnDepart").disabled = !identifieOk || !chambresOk || !passeOk;
     }
 
     function remplirSelect(id, options, texteVide) {
@@ -130,6 +207,7 @@
           remplirSelect("site", sitesData.map(function(s) { return { value: s.nom, label: s.nom }; }), "Sélectionner");
           remplirSelect("nom", (data.salaries || []).map(function(n) { return { value: n, label: n }; }), "Sélectionner");
           donneesChargees = true;
+          reinitialiserPasse();
           majEtatBoutons();
         })
         .catch(function(err) {
@@ -165,6 +243,7 @@
         site: site,
         nom: nom,
         chambres: document.getElementById("chambres").value,
+        passeRendu: passeRendu ? "Oui" : "Non",
         observation: document.getElementById("observation").value
       };
 
@@ -180,6 +259,8 @@
             msg.textContent = res.message;
             document.getElementById("chambres").value = "";
             document.getElementById("observation").value = "";
+            // Le passe repart à zéro : la prochaine vacation exigera une nouvelle confirmation.
+            if (action === "depart") reinitialiserPasse();
           } else {
             msg.className = "err";
             msg.textContent = res.message || "Erreur lors de l'envoi.";
