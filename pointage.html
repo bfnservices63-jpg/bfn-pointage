@@ -63,9 +63,61 @@
   .err { color: #b00020; font-weight: bold; margin-top: 15px; }
   .small { color: #777; font-size: 13px; margin-top: 14px; }
   .encart { background: #f0f4f8; border-radius: 9px; padding: 12px; margin-top: 18px; }
+
+  /* ------------------------------------------------------------------------
+     Écran d'enregistrement plein écran.
+     Des salariés fermaient l'application dès le clic, avant que le serveur ait
+     répondu : le pointage n'était jamais écrit et remontait ensuite comme un
+     "oubli". Un simple texte sous les boutons ne suffisait pas, personne ne le
+     lisait. D'où un écran qui recouvre tout, impossible à manquer, et qui ne
+     disparaît QUE sur un clic du salarié — jamais tout seul. Tant qu'il est
+     rouge, rien n'est enregistré ; vert, c'est écrit dans le tableau.
+     ------------------------------------------------------------------------ */
+  #overlayEnvoi {
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: #b00020; color: white; padding: 26px;
+    flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; overflow-y: auto;
+  }
+  #overlayEnvoi.visible { display: flex; }
+  #overlayEnvoi.termine { background: #0a7a20; }
+  #overlayEnvoi.echec { background: #37474f; }
+  #iconeEnvoi { font-size: 76px; line-height: 1; margin-bottom: 14px; }
+  #overlayEnvoi.encours #iconeEnvoi { animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.88); } }
+  #titreEnvoi { font-size: 27px; font-weight: bold; line-height: 1.2; }
+  #consigneEnvoi {
+    font-size: 21px; font-weight: bold; line-height: 1.35; margin-top: 18px;
+    background: rgba(0,0,0,.22); border-radius: 12px; padding: 16px;
+  }
+  #etapeEnvoi { font-size: 16px; margin-top: 16px; opacity: .92; line-height: 1.4; }
+  #barre { width: 100%; max-width: 330px; height: 9px; border-radius: 9px; margin-top: 20px;
+           background: rgba(255,255,255,.28); overflow: hidden; }
+  #barre > div { height: 100%; width: 35%; background: white; border-radius: 9px;
+                 animation: glisse 1.3s linear infinite; }
+  @keyframes glisse { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+  #overlayEnvoi:not(.encours) #barre { display: none; }
+  #btnFermerEnvoi {
+    display: none; width: auto; min-width: 250px; margin-top: 26px; padding: 17px 26px;
+    font-size: 19px; background: white; border-radius: 11px;
+  }
+  #overlayEnvoi.termine #btnFermerEnvoi { display: block; color: #0a7a20; }
+  #overlayEnvoi.echec #btnFermerEnvoi { display: block; color: #37474f; }
 </style>
 </head>
 <body>
+  <!-- Recouvre toute la page pendant l'envoi. Voir le commentaire CSS #overlayEnvoi. -->
+  <div id="overlayEnvoi">
+    <div id="iconeEnvoi">⏳</div>
+    <div id="titreEnvoi">ENREGISTREMENT EN COURS</div>
+    <div id="consigneEnvoi">
+      NE FERMEZ PAS L'APPLICATION<br>
+      N'ÉTEIGNEZ PAS VOTRE TÉLÉPHONE
+    </div>
+    <div id="etapeEnvoi">Patientez quelques secondes...</div>
+    <div id="barre"><div></div></div>
+    <button id="btnFermerEnvoi" onclick="fermerOverlay()">OK, J'AI COMPRIS</button>
+  </div>
   <div class="box">
     <h1>BFN Nouvelle Aquitaine</h1>
     <div class="subtitle">Pointage arrivée / départ</div>
@@ -352,6 +404,64 @@
         });
     }
 
+    // ---------------------------------------------------------------------
+    // Pilotage de l'écran d'enregistrement.
+    // Règle : l'écran rouge signifie "rien n'est encore écrit", le vert "c'est
+    // enregistré". Il ne se referme jamais de lui-même : le salarié doit cliquer,
+    // ce qui garantit qu'il a vu le résultat de son pointage.
+    // ---------------------------------------------------------------------
+    let envoiEnCours = false;
+
+    function ouvrirOverlay(action) {
+      envoiEnCours = true;
+      const o = document.getElementById("overlayEnvoi");
+      o.className = "visible encours";
+      document.getElementById("iconeEnvoi").textContent = "⏳";
+      document.getElementById("titreEnvoi").textContent =
+        action === "depart" ? "ENREGISTREMENT DE VOTRE DÉPART" : "ENREGISTREMENT DE VOTRE ARRIVÉE";
+      document.getElementById("consigneEnvoi").innerHTML =
+        "NE FERMEZ PAS L'APPLICATION<br>N'ÉTEIGNEZ PAS VOTRE TÉLÉPHONE";
+      etapeOverlay("Patientez quelques secondes...");
+    }
+
+    function etapeOverlay(texte) {
+      document.getElementById("etapeEnvoi").textContent = texte;
+    }
+
+    function overlayTermine(texte) {
+      envoiEnCours = false;
+      const o = document.getElementById("overlayEnvoi");
+      o.className = "visible termine";
+      document.getElementById("iconeEnvoi").textContent = "✅";
+      document.getElementById("titreEnvoi").textContent = "C'EST ENREGISTRÉ";
+      document.getElementById("consigneEnvoi").textContent = texte;
+      etapeOverlay("Vous pouvez maintenant fermer l'application.");
+    }
+
+    function overlayEchec(texte) {
+      envoiEnCours = false;
+      const o = document.getElementById("overlayEnvoi");
+      o.className = "visible echec";
+      document.getElementById("iconeEnvoi").textContent = "⚠️";
+      document.getElementById("titreEnvoi").textContent = "RIEN N'A ÉTÉ ENREGISTRÉ";
+      document.getElementById("consigneEnvoi").textContent = texte;
+      etapeOverlay("Cliquez ci-dessous puis recommencez votre pointage.");
+    }
+
+    function fermerOverlay() {
+      document.getElementById("overlayEnvoi").className = "";
+    }
+
+    // Dernier filet de sécurité : si le salarié ferme l'onglet pendant l'envoi,
+    // le navigateur lui demande confirmation. Tous les navigateurs mobiles ne
+    // l'honorent pas, d'où l'écran bloquant ci-dessus comme protection première.
+    window.addEventListener("beforeunload", function(e) {
+      if (!envoiEnCours) return;
+      e.preventDefault();
+      e.returnValue = "Votre pointage n'est pas encore enregistré.";
+      return e.returnValue;
+    });
+
     async function envoyer(action) {
       const btnArrivee = document.getElementById("btnArrivee");
       const btnDepart = document.getElementById("btnDepart");
@@ -373,11 +483,14 @@
       btnClique.textContent = "⏳ Envoi en cours...";
       msg.className = "";
       msg.textContent = "Localisation puis envoi, merci de patienter...";
+      ouvrirOverlay(action);
+      etapeOverlay("Étape 1 sur 2 : relevé de votre position...");
 
       // Position reprise à l'instant du clic : c'est le lieu du pointage qu'on veut inscrire,
       // pas celui de l'ouverture de la page, qui peut dater de plusieurs heures.
       await demanderPosition();
       msg.textContent = "Envoi en cours, merci de patienter...";
+      etapeOverlay("Étape 2 sur 2 : envoi au serveur, ne coupez pas...");
 
       const data = {
         action: action,
@@ -402,6 +515,7 @@
           if (res.ok) {
             msg.className = "ok";
             msg.textContent = res.message;
+            overlayTermine(res.message);
             document.getElementById("chambres").value = "";
             document.getElementById("observation").value = "";
             // Le passe repart à zéro : la prochaine vacation exigera une nouvelle confirmation.
@@ -416,6 +530,7 @@
           } else {
             msg.className = "err";
             msg.textContent = res.message || "Erreur lors de l'envoi.";
+            overlayEchec(res.message || "Erreur lors de l'envoi.");
           }
           btnClique.textContent = libelleOriginal;
           majEtatBoutons();
@@ -423,6 +538,7 @@
         .catch(function(err) {
           msg.className = "err";
           msg.textContent = "Erreur réseau lors de l'envoi. Réessayez.";
+          overlayEchec("Problème de réseau. Vérifiez votre connexion internet.");
           btnClique.textContent = libelleOriginal;
           majEtatBoutons();
         });
