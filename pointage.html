@@ -386,17 +386,71 @@
       });
     }
 
+    // ---------------------------------------------------------------------
+    // Mémoire des listes : la dernière liste des sites et des salariés reçue est gardée sur
+    // le téléphone, pour s'afficher dès l'ouverture. La liste à jour est demandée en même
+    // temps et la remplace dès son arrivée. Les boutons de pointage restent bloqués tant
+    // que cette liste à jour n'est pas arrivée : on ne pointe jamais sur une liste ancienne.
+    // ---------------------------------------------------------------------
+    const CLE_LISTES_ = "bfn_pointage_listes_v1";
+
+    function lireListesMemorisees_() {
+      try {
+        const texte = localStorage.getItem(CLE_LISTES_);
+        return texte ? JSON.parse(texte) : null;
+      } catch (e) {
+        return null; // navigation privée, stockage bloqué : on attend simplement le serveur
+      }
+    }
+
+    function memoriserListes_(data) {
+      try {
+        localStorage.setItem(CLE_LISTES_, JSON.stringify({
+          sites: data.sites || [], salaries: data.salaries || [] }));
+      } catch (e) { /* sans mémoire, la page fonctionne comme avant */ }
+    }
+
+    /**
+     * Remplit les deux listes en conservant le site et le nom déjà choisis s'ils existent
+     * toujours. Retourne vrai si un choix a disparu de la nouvelle liste (et a donc été vidé).
+     */
+    function afficherListes_(data) {
+      const selSite = document.getElementById("site");
+      const selNom = document.getElementById("nom");
+      const siteAvant = selSite.value;
+      const nomAvant = selNom.value;
+      const salaries = data.salaries || [];
+
+      sitesData = data.sites || [];
+      remplirSelect("site", sitesData.map(function(s) { return { value: s.nom, label: s.nom }; }), "Sélectionner");
+      remplirSelect("nom", salaries.map(function(n) { return { value: n, label: n }; }), "Sélectionner");
+
+      const siteGarde = siteAvant !== "" && sitesData.some(function(s) { return s.nom === siteAvant; });
+      const nomGarde = nomAvant !== "" && salaries.indexOf(nomAvant) !== -1;
+      if (siteGarde) selSite.value = siteAvant;
+      if (nomGarde) selNom.value = nomAvant;
+      return (siteAvant !== "" && !siteGarde) || (nomAvant !== "" && !nomGarde);
+    }
+
     function chargerDonnees() {
       const msg = document.getElementById("message");
+      const memoire = lireListesMemorisees_();
+      if (memoire) afficherListes_(memoire);
+
       fetch(SCRIPT_URL + "?format=json")
         .then(function(r) { return r.json(); })
         .then(function(data) {
-          sitesData = data.sites || [];
-          remplirSelect("site", sitesData.map(function(s) { return { value: s.nom, label: s.nom }; }), "Sélectionner");
-          remplirSelect("nom", (data.salaries || []).map(function(n) { return { value: n, label: n }; }), "Sélectionner");
+          const choixPerdu = afficherListes_(data);
+          memoriserListes_(data);
           donneesChargees = true;
-          reinitialiserPasse();
-          majEtatBoutons();
+          const dejaChoisi = document.getElementById("site").value !== "" ||
+            document.getElementById("nom").value !== "";
+          if (choixPerdu) {
+            changementIdentite();      // un choix a disparu : on repart proprement
+          } else {
+            if (!dejaChoisi) reinitialiserPasse();
+            majEtatBoutons();
+          }
         })
         .catch(function(err) {
           msg.className = "err";
